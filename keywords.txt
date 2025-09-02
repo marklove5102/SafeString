@@ -29,6 +29,8 @@ equals	KEYWORD2
 equalsIgnoreCase	KEYWORD2
 equalsConstantTime	KEYWORD2
 startsWith	KEYWORD2
+utf8index	KEYWORD2
+utf8nextIndex	KEYWORD2
 startsWithIgnoreCase	KEYWORD2
 endsWith	KEYWORD2
 endsWithCharFrom	KEYWORD2

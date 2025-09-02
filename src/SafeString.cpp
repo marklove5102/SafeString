@@ -3234,6 +3234,172 @@ int SafeString::indexOfCharFrom(const char* chars, unsigned int fromIndex) {
 /****  end of Search methods  *******************************/
 
 /*************************************************/
+/**  utf8 methods                           */
+/*************************************************/
+// For endIdx <= length(), utf8index returns an index in the range endIdx-3 to endIdx
+// such that using that index for substring will not split a valid utf8 code point
+// if endIdx > length(), endIdx is set to length(); and the error flag is set
+// endIdx == (unsigned int)(-1)  is treated as endIdx == length() returns a result without an error
+    //Code Points 	     1st-Byte 2nd-Byte 3rd-Byte 4th-Byte
+    //U+0000..U+007F 	    00..7F 			
+    //U+0080..U+07FF 	    C2..DF 	80..BF 		
+    //U+0800..U+0FFF 	    E0 	    A0..BF 	80..BF 	
+    //U+1000..U+CFFF 	    E1..EC 	80..BF 	80..BF 	
+    //U+D000..U+D7FF 	    ED 	    80..9F 	80..BF 	
+    //U+E000..U+FFFF 	    EE..EF 	80..BF 	80..BF 	
+    //U+10000..U+3FFFF      F0 	    90..BF 	80..BF 	80..BF
+    //U+40000..U+FFFFF 	    F1..F3 	80..BF 	80..BF 	80..BF
+    //U+100000..U+10FFFF 	F4 	    80..8F 	80..BF 	80..BF  
+
+int SafeString::utf8index(unsigned int endIdx) {
+  cleanUp();
+  if ((len == 0) && (endIdx == 0)) {
+    return 0;
+  }
+
+  if (endIdx == (unsigned int)(-1)) {
+    endIdx = len;
+  }
+
+  if (endIdx > len) {
+    setError();
+#ifdef SSTRING_DEBUG
+    if (debugPtr) {
+      warningMethod(F("utf8index"));
+      debugPtr->print(F(" SafeString")); outputName(); debugPtr->print(F(" endIdx > length() "));
+      debugInternalResultMsg(fullDebug);
+    }
+#endif // SSTRING_DEBUG
+    endIdx = len;
+  }  
+  unsigned int idx = endIdx;
+  int count = 0;
+  uint8_t p = 0xFF;
+  // start at endIdx and work back looking for start of utf8
+  while((idx > 0) && (count <= 4)) { 
+    // check idx-1
+    p = charAt(idx-1);
+    idx--;
+    count++;
+    if (count == 4) {
+      return endIdx; // found 3 trailing bytes before this one
+      // so there is a full utf8 4 byte code point between here and
+      // endIdx, so splitting at endIdx will not split a code point
+    }
+    // common case ASCII
+    if (p <= 0x7F) { // finished check valid utf8
+      return endIdx; // first utf8 start byte found and it is a complete code point 
+      // so there is not another partial utf8 code point between here and
+      // endIdx, so splitting at endIdx will not split a code point
+    } 
+    // expect trailing bytes with values < 0xC0, 192
+    if (p >= 0xC0) { // possible first byte of utf8 code point
+      break;
+    } 
+    // else not a utf8 starting byte for a utf8 code point
+    // tailing bytes are 
+    // in the range >= 0b10000000 (0x80) < 0b11000000 (0xC0)
+    // continue
+  }
+  
+  // idx is the start a possible valid utf8 sequence.
+  if ((p < 0xC2) || (p > 0xF4)) {
+    // not a valid starting byte for utf8 code point
+    // so sequence of bytes between here and endIdx are not a valid utf8 code point
+    return endIdx; 
+  }    
+
+  // else check for valid number of trailing utf8 bytes for this starting byte
+  if ((p >= 0xF0 && p <= 0xF4) && (count >= 4)) {
+    return idx + 4; // skip to end of 4 byte utf8 code point
+    // this case already handled by the if (count == 4) { return endIdx} above
+  } else if ((p >= 0xE0 && p <= 0xEF) && (count >= 3)) {
+    return idx + 3; // skip to end of 3 byte utf8 code point, may split on invalid extra trailing bytes   
+  } else if ((p >= 0xC2 && p <= 0xDF) && (count >= 2)) {  
+    return idx + 2; // skip to end of 2 byte utf8 code point, may split on invalid extra trailing bytes    
+  } 
+  // found start of partial utf8 code point.
+  if ((idx == 0) && (endIdx == len)) {
+    // safeString only contains partial utf8 code point 
+    // so spitting on endIdx will not split aa valid code point
+    return endIdx;
+  }  
+  // else split here befor partial code point
+  return idx; 
+}  
+
+
+// For startIdx < length(), utf8nextIndex returns an index in the range startIdx+1 to startIdx+4
+// such that using that index for substring will not split a valid utf8 code point
+// if startIdx > length(), (unsigned int)(-1) will be returned and the error flag is set
+// if startIdx == (unsigned int)(-1), OR startIdx == length(),  (unsigned int)(-1) will be returned with no error
+int SafeString::utf8nextIndex(unsigned int startIdx) {
+  cleanUp();
+  if (startIdx == (unsigned int)(-1)) {
+    startIdx = len;
+  }
+  if (startIdx == len) {
+    return -1;
+  }
+  if (startIdx > len) {
+    setError();
+#ifdef SSTRING_DEBUG
+    if (debugPtr) {
+      warningMethod(F("utf8nextIndex"));
+      debugPtr->print(F(" SafeString")); outputName(); debugPtr->print(F(" startIdx >= length() "));
+      debugInternalResultMsg(fullDebug);
+    }
+#endif // SSTRING_DEBUG
+    return -1;
+  }
+  if ((startIdx+1) == len) {
+    return len;
+  }
+  // check startIdx for valid start byte
+  uint8_t p = charAt(startIdx);
+  int maxCount = 4;
+  if (p >= 0xF0 && p <= 0xF4) {
+    maxCount = 4; // max possible valid bytes to end of 4 byte utf8 code point
+  } else if (p >= 0xE0 && p <= 0xEF) {
+    maxCount = 3; // max possible valid bytes to end of 3 byte utf8 code point   
+  } else if (p >= 0xC2 && p <= 0xDF) {  
+    maxCount = 2; // max possible valid bytes to end of 2 byte utf8 code point    
+  } 
+  // may stop before maxCount if find start byte.
+  
+  unsigned int idx = startIdx+1;
+  int count = 0;
+  // start at endIdx and work back looking for start of utf8
+  while((idx < len) && (count < maxCount)) { 
+    // check idx
+    p = charAt(idx);
+    // common case ASCII
+    if (p <= 0x7F) { // finished check valid utf8
+      return idx; // first utf8 start byte found and it is a complete code point 
+      // so splitting here will not split a code point
+    } 
+    // expect trailing bytes with values < 0xC0, 192
+    if (p >= 0xC0) { // possible first byte of utf8 code point
+      return idx; // so splitting here will not split a code point
+    } 
+    // else not a utf8 starting byte for a utf8 code point
+    // tailing bytes are 
+    // in the range >= 0b10000000 (0x80) < 0b11000000 (0xC0)
+    // continue
+    count++;
+    if (count == maxCount) {
+      return idx; // have scanned 4 bytes with no start found so split here
+      // will not break a valid utf8 code point
+    }    
+    idx++; // try next one
+  }
+  return idx; // stopped at end of safeString or after testing 4 bytes 
+  // so splitting here will not split a valid utf8 code point
+}  
+
+/****  end of uft8 methods  *******************************/
+    
+/*************************************************/
 /**  substring methods                           */
 /*************************************************/
 // substring is from beginIdx to end of string
