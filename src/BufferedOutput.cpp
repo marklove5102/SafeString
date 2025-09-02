@@ -516,6 +516,7 @@ size_t BufferedOutput::bytesToBeSent() {
   }
   return btbs;
 }
+static volatile bool inNextByteOut = false; // lock to prevent recursive calls to nextByteOut
 
 // NOTE nextByteOut will block if baudRate is set higher then actual i/o baudrate
 void BufferedOutput::nextByteOut() {
@@ -527,6 +528,11 @@ void BufferedOutput::nextByteOut() {
   //  delay(5000);
     return;
   }
+  if (inNextByteOut) {
+    return;
+  }
+  inNextByteOut = true;
+  
   if (mode != DROP_UNTIL_EMPTY) {
     waitForEmpty = false; // always skips a lot of the code below
   }
@@ -543,6 +549,7 @@ void BufferedOutput::nextByteOut() {
       // no txBuffer so using baudrate to release bytes instead of availableForWrite()
       sendTimerStart = micros(); // restart baudrate release timer
     }
+    inNextByteOut = false;
     return; // nothing to release
   }
 
@@ -570,6 +577,7 @@ void BufferedOutput::nextByteOut() {
     // if serialBytesWritten then wrote to txBuffer
     if ((!waitForEmpty) || serialBytesWritten || rb_available() ) { // if just wrote somthing or still have something to write then => waitForEmpty unchanged,
       //  also if waitForEmpty false no need to check (wrong mode)
+      inNextByteOut = false;
       return; // not empty
     }
     // here waitForEmpty true && noBytesWritten to txBuffer && rb_buffer empty
@@ -581,6 +589,7 @@ void BufferedOutput::nextByteOut() {
     if (avail >= txBufferSize) { // empty
       waitForEmpty = false;
     }
+    inNextByteOut = false;
     return;
   } // else no txBuffer release on timer
 
@@ -592,6 +601,7 @@ void BufferedOutput::nextByteOut() {
   // NOTE throw away any excess of (us - sendTimerStart) > us_perByte
   // output will be slower then specified
   if ((us - sendTimerStart) < us_perByte) {
+    inNextByteOut = false;
     return; // nothing to do not time to release next byte
   }
   // else send next byte
@@ -604,6 +614,7 @@ void BufferedOutput::nextByteOut() {
   if (rb_available() == 0) {
     waitForEmpty = false;
   }
+  inNextByteOut = false;
 }
 
 // always expect there to be at least 4 spaces available in the ringBuffer when this is called

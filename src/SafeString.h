@@ -1098,6 +1098,63 @@ class SafeString : public Printable, public Print {
       */
     int indexOfCharFrom(const char* chars, unsigned int fromIndex = 0);
 
+    /* *** utf8 methods ************/
+    // For endIdx <= length(), utf8index returns an index in the range endIdx-3 to endIdx
+    // such that using that index for substring will not split a valid utf8 code point
+    // if endIdx > length(), endIdx is set to length(); and the error flag is set
+    // endIdx == (unsigned int)(-1)  is treated as endIdx == length() returns a result without an error
+    //Code Points 	     1st-Byte 2nd-Byte 3rd-Byte 4th-Byte
+    //U+0000..U+007F 	    00..7F 			
+    //U+0080..U+07FF 	    C2..DF 	80..BF 		
+    //U+0800..U+0FFF 	    E0 	    A0..BF 	80..BF 	
+    //U+1000..U+CFFF 	    E1..EC 	80..BF 	80..BF 	
+    //U+D000..U+D7FF 	    ED 	    80..9F 	80..BF 	
+    //U+E000..U+FFFF 	    EE..EF 	80..BF 	80..BF 	
+    //U+10000..U+3FFFF 	  F0 	    90..BF 	80..BF 	80..BF
+    //U+40000..U+FFFFF 	  F1..F3 	80..BF 	80..BF 	80..BF
+    //U+100000..U+10FFFF 	F4 	    80..8F 	80..BF 	80..BF  
+    
+    /**
+      For endIdx <= length(), utf8index() returns an index in the range endIdx-3 to endIdx
+      such that using that index in substring() will not split a valid utf8 code point.
+      (see https://www.unicode.org/versions/Unicode16.0.0/core-spec/)
+      
+      @param endIdx - the index to the start searching back from to find as safe index to split on to preserve valid utf8 code points<br>
+      if endIdx > length(),  endIdx is set to length(); and the error flag is set.<br>
+      if endIdx == (unsigned int)(-1), it is treated as endIdx == length() and returns a result without error.
+      
+      @return result - index that the SafeString can be split at that will preserve valid uff8 code points.
+           
+      To take a substring() of a SafeString containing utf8 data while maintaining the integrity of the utf8 code points use <br>
+      <code>sfStr.substring(sfResult, 0, sfStr.utf8index(endIdx));</code><br>
+      Note: if sfStr only contains ASCII data (0x00 to 0x7F) the result is exactly the same as<br>
+      <code>sfStr.substring(sfResult, 0, endIdx);</code>
+      */
+    int utf8index(unsigned int endIdx);
+    
+    
+    // For startIdx < length(), utf8nextIndex returns an index in the range startIdx+1 to startIdx+4
+    // such that using that index for substring will not split a valid utf8 code point
+    // if startIdx > length(), (unsigned int)(-1) will be returned and the error flag is set
+    // if startIdx == (unsigned int)(-1), OR startIdx == length(),  (unsigned int)(-1) will be returned with no error
+    /**
+      For startIdx < length(), utf8nextIndex() returns an index in the range startIdx+1 to startIdx+4
+      such that using that index in substring() will not split a valid utf8 code point.
+      (see https://www.unicode.org/versions/Unicode16.0.0/core-spec/)
+      
+      @param startIdx - the index to the start from to find the next start of a valid utf8 code points<br>
+      if startIdx > length(),  (unsigned int)(-1) will be returned and the error flag is set<br>
+      if startIdx == (unsigned int)(-1), OR startIdx == length(),  (unsigned int)(-1) will be returned with no error
+      
+      @return result - the next index, after startIdx, that can start a valid utf8 code point.<br>
+      Using this index in substring() will preserve valid uff8 code points.
+           
+      To extract a single uft8 code point around idx use <br>
+      <code>sfStr.substring(sfResult, sfStr.utf8index(idx), sfStr.utf8nextIndex(idx));</code><br>
+      Note: if sfStr only contains ASCII data (0x00 to 0x7F) the result is exactly the same as<br>
+      <code>sfStr.substring(sfResult, idx, idx+1);</code>
+      */
+    int utf8nextIndex(unsigned int startIdx);
 
     /* *** substring methods ************/
     // substring is from beginIdx to end of string
